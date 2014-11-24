@@ -1,6 +1,10 @@
 from amazon_scraper import AmazonScraper
 import warnings
 from bs4 import BeautifulSoup
+warnings.filterwarnings("ignore")
+AWS_ACCESS_KEY_ID = "AKIAIETM24OXNYX6EKAQ"
+AWS_SECRET_ACCESS_KEY = "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"
+AWS_ASSOCIATE_TAG = "personaltwi08-20"
 
 def ratings(product):
     ratings = [0, 0, 0, 0, 0]
@@ -29,7 +33,7 @@ def ratings(product):
             # get the third td tag
             children = [child for child in row.find_all('td', recursive=False)]
             td = children[2]
-            data = td.find('span', class_=False)
+            data = td.find('a')
             if data:
                 # number could have , in it which fails during int conversion
                 value = data.string
@@ -38,13 +42,6 @@ def ratings(product):
         return ratings
 
     return ratings
-
-warnings.filterwarnings("ignore")
-
-AWS_ACCESS_KEY_ID = "AKIAIETM24OXNYX6EKAQ"
-AWS_SECRET_ACCESS_KEY = "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"
-AWS_ASSOCIATE_TAG = "personaltwi08-20"
-
 
 a = AmazonScraper(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ASSOCIATE_TAG)
 
