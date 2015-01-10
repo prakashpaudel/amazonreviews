@@ -1,4 +1,4 @@
-from amazon_scraper import AmazonScraper
+from amazon_scraper import AmazonScraper, user_agent
 import warnings
 from bs4 import BeautifulSoup
 import time
@@ -8,9 +8,15 @@ import xlutils
 from xlrd.sheet import Sheet
 import itertools
 from types import NoneType
+import requests
 
 #Global defaults
 warnings.filterwarnings("ignore")
+
+
+def shipping(p):
+    result = p.product._safe_get_element_text('Offers.Offer.OfferListing.Availability')
+    return result
 
 def releaseDate(p):
     date = p.product._safe_get_element_text('SellerListing.StartDate')
@@ -38,13 +44,63 @@ def add_data(sheet, count, data_list):
     for i in range(len(data_list)):
         sheet.write(count, i, data_list[i])
 
+def recent_ratings(amzn, p, rs_soup):
+#     ratings = [0, 0, 0, 0, 0]
+#     rating_list = []
+    ids = []
+    if rs_soup:
+        reviews_div = rs_soup.find('table', id='productReviews')
+        if reviews_div:
+            td = reviews_div.find('td')
+            if td:
+                for a in td.find_all('a',recursive=False):
+                    ids.append(a['name']+',')
+    return ids
+    
+    
+#     ratings = [0, 0, 0, 0, 0]
+#     rating_list = []
+#     page = amzn.reviews(URL=p.reviews_url)
+#     for r_id in page.ids:
+#         r = amzn.review(Id=r_id)
+#         rating_list.append(r.rating)
+#     for rating in rating_list:
+#         if(rating == .2): ratings[0] +=1
+#         if(rating == .4): ratings[1] +=1
+#         if(rating == .6): ratings[2] +=1
+#         if(rating == .8): ratings[3] +=1
+#         if(rating == 1.0): ratings[4] +=1
+#     return ratings
+
+def helpful_ratings(amzn, p, rs_soup):
+#     ratings = [0, 0, 0, 0, 0]
+#     rating_list = []
+    ids = []
+    if rs_soup:
+        reviews_div = rs_soup.find('table', id='productReviews')
+        if reviews_div:
+            td = reviews_div.find('td')
+            if td:
+                for a in td.find_all('a',recursive=False):
+                    ids.append(a['name']+',')
+#     
+#     for id in ids:
+#         r = amzn.review(Id=id)
+#         rating_list.append(r.rating)
+#     for rating in rating_list:
+#         if(rating == .2): ratings[0] +=1
+#         if(rating == .4): ratings[1] +=1
+#         if(rating == .6): ratings[2] +=1
+#         if(rating == .8): ratings[3] +=1
+#         if(rating == 1.0): ratings[4] +=1
+    return ids    
+
+
+
 #This function takes in a product object and returns the # of 1-5 star ratings as a list
-def ratings(amzn, p):
+def all_ratings(amzn, p, rs_soup):
     ratings = [0, 0, 0, 0, 0]
-    has_reviews = p.product.reviews[0]
-    if has_reviews:
-        rs = amzn.reviews(URL=p.reviews_url)
-        rs_soup = rs.soup
+    if rs_soup:
         summary = rs_soup.find('table', id='productSummary')
         if summary:
             table = summary.find('table')
@@ -58,27 +114,84 @@ def ratings(amzn, p):
                     ratings[rating] = int(value)
     return ratings
 
-def data(amzn, p, p_type, p_category):
+def reviewdata(amzn, p, p_url):
+    ratings = [0, 0, 0, 0, 0]
+    recent_ids = []
+    helpful_ids = []
+     
+    soup = my_soup(p_url)
+    if soup:
+        container = soup.find('div', id='reviewContainer')
+        if container:
+            #ratings
+            table = container.find('table', id='histogramTable')
+            if table:
+                for rating, row in zip([4,3,2,1,0], table.find_all('tr', class_='a-histogram-row')):
+                # get the third td tag
+                    children = [child for child in row.find_all('td', recursive=False)]
+                    td = children[2]
+                    data = td.text
+                    if data:
+                        # number could have , in it which fails during int conversion
+                        value = str(data)
+                        value = value[2:]
+                        value = value.replace(',', '').replace(' ','')
+                        ratings[rating] = int(value)
+            #helpful
+            div = container.find('div', id='revMHRL')
+            if div:
+                for row in div.find_all('div', recursive=False):
+                    helpful_ids.append(row['id'].split('-')[2]+',')
+            #recent
+            div = container.find('div', id='revMRRL')
+            if div:
+                for row in div.find_all('div', recursive=False):
+                    a = row.find('a')
+                    recent_ids.append(a['href'].split('#')[-1]+',')
+        else:
+            reviews_url = p.reviews_url
+            rrs_soup = my_soup(reviews_url)
+            url_split = reviews_url.split('/')
+            url_split[5] = url_split[5].replace('recent','helpful').replace('SubmissionDate','Rank')
+            p_helpful_url = "/".join(str(bit) for bit in url_split)
+            hrs_soup = my_soup(p_helpful_url)
+             
+            ratings = all_ratings(amzn, p, rrs_soup)
+            helpful_ids = helpful_ratings(amzn, p, hrs_soup)
+            recent_ids = recent_ratings(amzn, p, rrs_soup)
+            
+    return ratings, recent_ids, helpful_ids        
+
+def my_soup(url):
+    html = requests.get(url, headers={'User-Agent':user_agent}, verify=False)
+    html.raise_for_status()
+    return BeautifulSoup(html.text, 'html5lib')
+
+def data(amzn, p, p_category):
     p_name = p.title
     p_id = p.asin
-    p_ratings = ratings(amzn, p)
-    p_total_ratings = total_ratings(p_ratings)
-    p_avg_rating = 0 if p_total_ratings == 0 else avg_rating(p_ratings)
     p_price = p.product.price_and_currency[0]
     p_list_price = p.product.list_price[0]
     p_rank = rank(p)
+    p_shipping = shipping(p)
+    
+    #reviews and ratings
     p_url = p.url
-    p_isPrime = isPrime(p)
-    p_releaseDate = releaseDate(p)
-    return [p_type, p_category, p_id, p_name, p_rank, p_price, p_list_price, p_isPrime,
+    p_ratings, p_recent_ids, p_helpful_ids = reviewdata(amzn, p, p_url)
+    p_total_ratings = total_ratings(p_ratings)
+    p_avg_rating = 0 if p_total_ratings == 0 else avg_rating(p_ratings)
+    
+    return [p_category, p_id, p_name, p_rank, p_price, p_list_price, p_shipping, 
             p_ratings[0], p_ratings[1], p_ratings[2], p_ratings[3], p_ratings[4],
             p_avg_rating, p_total_ratings,
+            p_recent_ids, p_helpful_ids,
             p_url]
 
 #adds variable headers to the first row of the given sheet
 def add_data_headers(sheet):
-    data_headers = ('type', 'category', 'a_id','name', 'rank', 'price', 'list_price', 'prime',
+    data_headers = ('category', 'id', 'name', 'rank', 'price', 'list_price', 'shipping',
                     'stars_1', 'stars_2', 'stars_3', 'stars_4', 'stars_5', 'rating', 'num_reviews',
+                    'recent_ids', 'helpful_ids',
                     'url')
     for c in range(len(data_headers)):
         sheet.write(0,c,data_headers[c])
@@ -92,30 +205,44 @@ def main():
     input_sheet_name = 'product_list'
     output_sheet_name = 'processed_data'
     
-    number_of_items = 5
+    number_of_items = 100
 
     #Initialize from given settings
     book_in = open_workbook(input_file_name)
     sheet_in = book_in.sheet_by_name(input_sheet_name)
     
     #Get list of items from excel file
-    search_index_list = sheet_in.col_values(0,1)
-    product_type_list = sheet_in.col_values(1,1)
+    search_indices = sheet_in.col_values(0,1)
+    product_types = sheet_in.col_values(1,1)
+    browse_nodes = sheet_in.col_values(2,1)
+    for i in range(len(browse_nodes)):
+        browse_nodes[i] = int(browse_nodes[i])
     
     amzn = AmazonScraper(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ASSOCIATE_TAG)
     #iterate through products
-    for i in range(len(product_type_list)):
-        #intialize for each product_type_list
-        book_out = Workbook()
-        sheet_out = book_out.add_sheet(output_sheet_name)
-        add_data_headers(sheet_out)
-        p_count = 0
-        #iterate through items
-        for p in itertools.islice(amzn.search(Keywords=product_type_list[i],SearchIndex=search_index_list[i]), number_of_items):
-            p_count += 1
-            print 'Processing', product_type_list[i], p_count
-            p_data = data(amzn, p, product_type_list[i], search_index_list[i])
+    i,j = 0,0
+    io = input('category number?')
+    if isinstance(io,int):
+        i = io
+    else:
+        i,j = io
+    #intialize for each product_types
+    book_out = Workbook()
+    sheet_out = book_out.add_sheet(output_sheet_name)
+    add_data_headers(sheet_out)
+    p_count = 0
+    #iterate through items
+    for p in itertools.islice(amzn.search(BrowseNode=browse_nodes[i],
+                                          SearchIndex=search_indices[i],
+                                          Sort='salesrank',
+                                          MerchantId='Amazon',
+                                          Availability='Available',
+                                          ),number_of_items):
+        p_count += 1
+        if p_count >= j:
+            print 'Processing', product_types[i], p_count
+            p_data = data(amzn, p, product_types[i])
             add_data(sheet_out, p_count, p_data)
-            book_out.save(output_file_name + '_' + product_type_list[i] + '.xls')
+            book_out.save(output_file_name + '_' + product_types[i] + '.xls')
     
 main()
