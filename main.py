@@ -12,7 +12,9 @@ import requests
 
 #Global defaults
 warnings.filterwarnings("ignore")
-
+AWS_ACCESS_KEY_ID = "AKIAJ7B6ZL65HM7GQWEQ"
+AWS_SECRET_ACCESS_KEY = "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"
+AWS_ASSOCIATE_TAG = "personaltwi08-20"
 
 def shipping(p):
     result = p.product._safe_get_element_text('Offers.Offer.OfferListing.Availability')
@@ -196,6 +198,42 @@ def add_data_headers(sheet):
     for c in range(len(data_headers)):
         sheet.write(0,c,data_headers[c])
 
+def reviewmain():
+    input_file_name = 'data/reviews.xlsx'
+    output_file_name = 'data/reviews_out'
+    input_sheet_name = 'reviews'
+    output_sheet_name = 'reviews'
+    
+    #Initialize from given settings
+    book_in = open_workbook(input_file_name)
+    sheet_in = book_in.sheet_by_name(input_sheet_name)
+    
+    amzn = AmazonScraper(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ASSOCIATE_TAG)
+    book_out = Workbook()
+    sheet_out = book_out.add_sheet(output_sheet_name)
+    
+    ids = sheet_in.col_values(0,1)
+    
+    io = input('starting point?')
+    i = io
+    
+    
+    while i < len(ids):
+        row = ids[i][:-1]
+        print 'Item ',i+1
+        result = 0
+        count = 0.0
+        for j in row.split(','):
+            r = amzn.review(Id=j)
+            count +=1
+            result += r.rating*5
+        add_data(sheet_out, i, [result/count])
+        book_out.save(output_file_name + 'helpdec19.xls')
+        i += 1
+    
+    
+
+
 
 #Main function of this program
 def main():
@@ -212,37 +250,76 @@ def main():
     sheet_in = book_in.sheet_by_name(input_sheet_name)
     
     #Get list of items from excel file
-    search_indices = sheet_in.col_values(0,1)
+    ids = sheet_in.col_values(0,1)
     product_types = sheet_in.col_values(1,1)
-    browse_nodes = sheet_in.col_values(2,1)
-    for i in range(len(browse_nodes)):
-        browse_nodes[i] = int(browse_nodes[i])
     
+    io = input('starting point?')
+    i = io
     amzn = AmazonScraper(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ASSOCIATE_TAG)
-    #iterate through products
-    i,j = 0,0
-    io = input('category number?')
-    if isinstance(io,int):
-        i = io
-    else:
-        i,j = io
-    #intialize for each product_types
     book_out = Workbook()
     sheet_out = book_out.add_sheet(output_sheet_name)
     add_data_headers(sheet_out)
     p_count = 0
-    #iterate through items
-    for p in itertools.islice(amzn.search(BrowseNode=browse_nodes[i],
-                                          SearchIndex=search_indices[i],
-                                          Sort='salesrank',
-                                          MerchantId='Amazon',
-                                          Availability='Available',
-                                          ),number_of_items):
-        p_count += 1
-        if p_count >= j:
-            print 'Processing', product_types[i], p_count
-            p_data = data(amzn, p, product_types[i])
-            add_data(sheet_out, p_count, p_data)
-            book_out.save(output_file_name + '_' + product_types[i] + '.xls')
     
-main()
+    #iterate through items
+    while i < len(ids):
+        p = amzn.lookup(ItemId=ids[i])
+        p_count += 1
+        print 'Processing', p_count
+        p_data = data(amzn, p, product_types[i])
+        add_data(sheet_out, p_count, p_data)
+        book_out.save(output_file_name + '_' + product_types[i] + '3.xls')
+        i = i+1
+# #Main function of this program
+# def main():
+#     #user settings
+#     input_file_name = 'data/input.xlsx'
+#     output_file_name = 'data/output_data'
+#     input_sheet_name = 'product_list'
+#     output_sheet_name = 'processed_data'
+#     
+#     number_of_items = 100
+# 
+#     #Initialize from given settings
+#     book_in = open_workbook(input_file_name)
+#     sheet_in = book_in.sheet_by_name(input_sheet_name)
+#     
+#     #Get list of items from excel file
+#     search_indices = sheet_in.col_values(0,1)
+#     product_types = sheet_in.col_values(1,1)
+#     browse_nodes = sheet_in.col_values(2,1)
+#     for i in range(len(browse_nodes)):
+#         browse_nodes[i] = int(browse_nodes[i])
+#     
+#     amzn = AmazonScraper(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ASSOCIATE_TAG)
+#     #iterate through products
+#     i,j = 0,0
+#     io = input('category number?')
+#     if isinstance(io,int):
+#         i = io
+#     else:
+#         i,j = io
+#     #intialize for each product_types
+#     book_out = Workbook()
+#     sheet_out = book_out.add_sheet(output_sheet_name)
+#     add_data_headers(sheet_out)
+#     p_count = 0
+#     #iterate through items
+#     for p in itertools.islice(amzn.search(BrowseNode=browse_nodes[i],
+#                                           SearchIndex=search_indices[i],
+#                                           Sort='salesrank',
+#                                           MerchantId='Amazon',
+#                                           Availability='Available',
+#                                           ),number_of_items):
+#         p_count += 1
+#         if p_count >= j:
+#             print 'Processing', product_types[i], p_count
+#             p_data = data(amzn, p, product_types[i])
+#             add_data(sheet_out, p_count, p_data)
+#             book_out.save(output_file_name + '_' + product_types[i] + '.xls')
+    
+# main()
+
+
+
+reviewmain()
